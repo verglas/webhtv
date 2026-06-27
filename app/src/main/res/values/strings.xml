@@ -7,6 +7,8 @@
     <string name="live_pass">Pass</string>
     <string name="live_refresh">Refresh</string>
     <string name="live_line">Line <xliff:g name="name">%s</xliff:g></string>
+    <string name="live_control_source">Live source</string>
+    <string name="live_no_epg">00:00 - 23:59 暂无节目信息</string>
 
     <!-- Detail -->
     <string name="detail_title"><xliff:g name="name">%s</xliff:g> : <xliff:g name="name">%s</xliff:g></string>
@@ -42,8 +44,12 @@
     <string name="play_timer">Timer</string>
     <string name="play_title">Chapter</string>
     <string name="play_scale">Default</string>
+    <string name="play_lut">LUT</string>
     <string name="play_config">Config</string>
+    <string name="play_cast">Cast</string>
     <string name="play_change">Change</string>
+    <string name="play_short_display">Short</string>
+    <string name="play_search">Search</string>
     <string name="play_fullscreen">Fullscreen</string>
     <string name="play_exit_fullscreen">Exit full</string>
     <string name="play_invert">Invert</string>
@@ -122,6 +128,7 @@
     <string name="setting_vod">Vod</string>
     <string name="setting_live">Live</string>
     <string name="setting_wall">Wallpaper</string>
+    <string name="setting_builtin_wall">Built-in wallpapers</string>
     <string name="setting_player">Player setting</string>
     <string name="setting_danmaku">Danmaku setting</string>
     <string name="setting_enhance">Enhancements</string>
@@ -529,14 +536,25 @@
     <string name="setting_custom_csp_recognize_empty">Paste site JSON first</string>
     <string name="setting_custom_csp_recognize_invalid">No valid site JSON detected</string>
     <string name="setting_custom_csp_recognize_done">Added %1$d items</string>
+    <string name="setting_custom_csp_sort">Sort</string>
+    <string name="setting_custom_csp_sort_done">Done</string>
+    <string name="setting_custom_csp_sort_drag">Drag to sort</string>
+    <string name="setting_custom_csp_sort_more">Sort actions</string>
+    <string name="setting_custom_csp_sort_top">Move to top</string>
+    <string name="setting_custom_csp_sort_bottom">Move to bottom</string>
+    <string name="setting_custom_csp_sort_forward_five">Move up 5</string>
+    <string name="setting_custom_csp_sort_backward_five">Move down 5</string>
+    <string name="setting_custom_csp_sort_move_to">Move to position</string>
+    <string name="setting_custom_csp_sort_move_to_title">Move to position</string>
+    <string name="setting_custom_csp_sort_move_to_hint">Position 1-%1$d</string>
     <string name="setting_custom_csp_count">%1$d/%2$d active</string>
-    <string name="setting_custom_csp_api">API / csp class</string>
+    <string name="setting_custom_csp_api">api</string>
     <string name="setting_custom_csp_code">Code</string>
     <string name="setting_custom_csp_down">Move down</string>
-    <string name="setting_custom_csp_ext">Ext</string>
+    <string name="setting_custom_csp_ext">ext</string>
     <string name="setting_custom_csp_home">Home</string>
-    <string name="setting_custom_csp_home_page">WebHome URL</string>
-    <string name="setting_custom_csp_home_page_optional">WebHome URL (optional)</string>
+    <string name="setting_custom_csp_home_page">homePage</string>
+    <string name="setting_custom_csp_home_page_optional">homePage</string>
     <string name="setting_custom_csp_extensions_toggle">Extensions</string>
     <string name="setting_custom_csp_extensions">Extension URL / JSON</string>
     <string name="setting_custom_csp_extensions_file">File</string>
@@ -547,30 +565,34 @@
     <string name="setting_custom_csp_webhome">WebHome</string>
     <string name="setting_custom_csp_common">General CSP</string>
     <string name="setting_custom_csp_live">Live</string>
+    <string name="setting_custom_csp_other">Other</string>
     <string name="setting_custom_csp_webhome_name">WebHome %1$d</string>
     <string name="setting_custom_csp_common_name">General CSP %1$d</string>
     <string name="setting_custom_csp_live_name">Live %1$d</string>
-    <string name="setting_custom_csp_key">Key</string>
-    <string name="setting_custom_csp_type">Type</string>
-    <string name="setting_custom_csp_player_type">Player type</string>
+    <string name="setting_custom_csp_other_name">Other %1$d</string>
+    <string name="setting_custom_csp_other_fields">field</string>
+    <string name="setting_custom_csp_other_json">value JSON</string>
+    <string name="setting_custom_csp_key">key</string>
+    <string name="setting_custom_csp_type">type</string>
+    <string name="setting_custom_csp_player_type">playerType</string>
     <string name="setting_custom_csp_unset">Unset</string>
     <string name="setting_custom_csp_player_system">0 System</string>
     <string name="setting_custom_csp_player_ijk">1 IJK</string>
     <string name="setting_custom_csp_player_exo">2 EXO</string>
-    <string name="setting_custom_csp_live_url">Live URL</string>
-    <string name="setting_custom_csp_logo">Logo</string>
-    <string name="setting_custom_csp_epg">EPG</string>
-    <string name="setting_custom_csp_ua">UA</string>
+    <string name="setting_custom_csp_live_url">url</string>
+    <string name="setting_custom_csp_logo">logo</string>
+    <string name="setting_custom_csp_epg">epg</string>
+    <string name="setting_custom_csp_ua">ua</string>
     <string name="setting_custom_csp_origin">Origin</string>
     <string name="setting_custom_csp_referer">Referer</string>
-    <string name="setting_custom_csp_time_zone">Time zone</string>
-    <string name="setting_custom_csp_timeout">Timeout seconds</string>
-    <string name="setting_custom_csp_click">Click script</string>
-    <string name="setting_custom_csp_play_url">Play URL</string>
-    <string name="setting_custom_csp_hide">Hide</string>
-    <string name="setting_custom_csp_searchable">Search</string>
-    <string name="setting_custom_csp_changeable">Change</string>
-    <string name="setting_custom_csp_quick_search">Quick</string>
+    <string name="setting_custom_csp_time_zone">timeZone</string>
+    <string name="setting_custom_csp_timeout">timeout</string>
+    <string name="setting_custom_csp_click">click</string>
+    <string name="setting_custom_csp_play_url">playUrl</string>
+    <string name="setting_custom_csp_hide">hide</string>
+    <string name="setting_custom_csp_searchable">searchable</string>
+    <string name="setting_custom_csp_changeable">changeable</string>
+    <string name="setting_custom_csp_quick_search">quickSearch</string>
     <string name="setting_custom_csp_insert">Insert position</string>
     <string name="setting_custom_csp_insert_decrease">Decrease insert position</string>
     <string name="setting_custom_csp_insert_increase">Increase insert position</string>
@@ -614,6 +636,7 @@
     <string name="setting_auto">Auto</string>
     <string name="setting_custom">Custom</string>
     <string name="setting_size">Image size</string>
+    <string name="setting_ui_scale">Interface size</string>
     <string name="setting_doh">DoH</string>
     <string name="setting_proxy">Proxy</string>
     <string name="setting_cache">Cache</string>
@@ -746,8 +769,15 @@
     <!-- Player -->
     <string name="player">Player</string>
     <string name="player_render">Render</string>
+    <string name="player_button_config">Player buttons</string>
+    <string name="player_button_config_summary">%1$d/%2$d shown</string>
+    <string name="player_button_up">Up</string>
+    <string name="player_button_down">Down</string>
+    <string name="play_episodes">Episodes</string>
+    <string name="player_exo_4k_compat">EXO enhanced mode</string>
     <string name="player_kernel">Player engine</string>
     <string name="player_scale">Scale</string>
+    <string name="player_lut">LUT color</string>
     <string name="player_libass">libass</string>
     <string name="player_caption">Caption style</string>
     <string name="player_background">Background play</string>
@@ -757,28 +787,77 @@
     <string name="player_adblock">Remove ads</string>
     <string name="player_tunnel">Tunnel mode</string>
     <string name="player_buffer">Buffer time</string>
+    <string name="player_buffer_bytes">Buffer size</string>
+    <string name="player_back_buffer">Back buffer</string>
+    <string name="player_cache">Playback cache</string>
+    <string name="player_preload">Preload</string>
+    <string name="player_preload_threads">Preload threads</string>
+    <string name="player_preload_threads_value">%1$d threads</string>
+    <string name="player_preload_size">Preload size</string>
+    <string name="player_preload_time">Preload time</string>
+    <string name="player_preload_time_value">%1$d seconds</string>
+    <string name="player_auto_change">Auto source change</string>
     <string name="player_speed">Press speed</string>
     <string name="player_ua">User-Agent</string>
     <string name="player_osd">On-screen display</string>
+    <string name="lut_original">Original</string>
+    <string name="lut_missing">Preset missing</string>
+    <string name="lut_summary">%1$s · %2$d%%</string>
+    <string name="lut_title_value">%1$s · %2$s</string>
+    <string name="lut_strength_value">Strength %1$d%%</string>
+    <string name="lut_preview_delay_value">%1$ds</string>
+    <string name="lut_import">Import</string>
+    <string name="lut_local">Local</string>
+    <string name="lut_reset">Reset</string>
+    <string name="lut_all">All</string>
+    <string name="lut_favorite">Favorite</string>
+    <string name="lut_directory">Folder</string>
+    <string name="lut_select_current_dir">Use this folder</string>
+    <string name="lut_close">Close</string>
+    <string name="lut_imported">LUT preset imported</string>
+    <string name="lut_directory_selected">LUT folder selected</string>
+    <string name="lut_import_failed">LUT import failed</string>
+    <string name="lut_favorited">Added to favorites</string>
+    <string name="lut_unfavorited">Removed from favorites</string>
+    <string name="lut_empty_presets">No LUT presets</string>
+    <string name="lut_empty_favorites">No favorite LUT presets</string>
+    <string name="lut_apply_failed">LUT color has been disabled temporarily</string>
+    <string name="lut_unavailable_player">Current player engine does not support LUT color</string>
+    <string name="lut_unavailable_drm">DRM protected videos do not support LUT color</string>
+    <string name="lut_unavailable_tunnel">Tunnel mode does not support LUT color</string>
+    <string name="lut_unavailable_soft_decode">Software decode does not support LUT color</string>
+    <string name="lut_unavailable_video_prefer">Extension video decode does not support LUT color</string>
+    <string name="lut_unavailable_hdr">HDR/Dolby Vision content does not support LUT color yet</string>
+    <string name="lut_unavailable_no_video">Current content has no video track</string>
 
     <!-- Danmaku -->
     <string name="danmaku_load">Danmaku load</string>
     <string name="danmaku_api">Search API</string>
+    <string name="danmaku_api_invalid">Invalid danmaku API URL</string>
     <string name="danmaku_auto_load">Auto search</string>
     <string name="danmaku_spider_first">Spider first</string>
 
     <!-- Search -->
     <string name="search_keyword">Keywords…</string>
+    <string name="search_column">Search layout</string>
     <string name="site_search_hint">Search sites…</string>
     <string name="search_record">History</string>
     <string name="search_suggest">Suggest</string>
     <string name="search_hot">Hot</string>
+    <string name="search_hot_tv">TV</string>
+    <string name="search_hot_movie">Movie</string>
+    <string name="search_hot_variety">Variety</string>
+    <string name="search_loading">Searching...</string>
+    <string name="search_progress">(%1$d/%2$d)</string>
+    <string name="search_no_result">No results</string>
 
     <!-- Dialog -->
     <string name="dialog_edit">Edit</string>
     <string name="dialog_positive">OK</string>
     <string name="dialog_negative">Cancel</string>
     <string name="dialog_reset">Reset</string>
+    <string name="setting_show">Show</string>
+    <string name="setting_hide">Hide</string>
     <string name="dialog_select_title">Select chapter</string>
     <string name="dialog_config_hint">Please enter the config…</string>
     <string name="dialog_config_name">Please enter the name…</string>
@@ -800,6 +879,10 @@
     <!-- Update -->
     <string name="update_version">New version <xliff:g name="name">%s</xliff:g></string>
     <string name="update_check">Checking for updates…</string>
+    <string name="update_latest">Already on the latest version</string>
+    <string name="update_failed">Update check failed</string>
+    <string name="update_downloading">Downloading %1$d%%</string>
+    <string name="update_downloading_unknown">Downloading…</string>
     <string name="update_confirm">Update</string>
 
     <!-- Crash -->
@@ -858,12 +941,40 @@
         <item>EXO</item>
         <item>IJK</item>
     </string-array>
+    <string-array name="select_buffer_bytes">
+        <item>Auto</item>
+        <item>64MB</item>
+        <item>128MB</item>
+        <item>256MB</item>
+    </string-array>
+    <string-array name="select_back_buffer">
+        <item>Off</item>
+        <item>15s</item>
+        <item>30s</item>
+        <item>60s</item>
+    </string-array>
+    <string-array name="select_play_cache">
+        <item>128MB</item>
+        <item>256MB</item>
+        <item>512MB</item>
+        <item>1GB</item>
+        <item>2GB</item>
+    </string-array>
 
     <string-array name="select_size">
         <item>Small</item>
         <item>Medium</item>
         <item>Large</item>
         <item>Extra</item>
+    </string-array>
+
+    <string-array name="select_ui_scale">
+        <item>Follow system</item>
+        <item>Standard</item>
+        <item>Mild compact</item>
+        <item>Compact</item>
+        <item>More compact</item>
+        <item>Smaller</item>
     </string-array>
 
     <string-array name="select_scale">
@@ -890,6 +1001,7 @@
         <item>Progress</item>
         <item>Network speed</item>
         <item>Mini</item>
+        <item>Playback params</item>
     </string-array>
 
     <string-array name="select_track">

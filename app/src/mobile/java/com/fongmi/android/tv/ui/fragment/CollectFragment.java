@@ -1,5 +1,7 @@
 package com.fongmi.android.tv.ui.fragment;
 
+import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
@@ -11,12 +13,14 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.core.view.MenuProvider;
 import androidx.lifecycle.Lifecycle;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.viewbinding.ViewBinding;
 
+import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Collect;
 import com.fongmi.android.tv.bean.Result;
@@ -24,7 +28,9 @@ import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.databinding.FragmentCollectBinding;
 import com.fongmi.android.tv.model.SiteViewModel;
+import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.setting.SiteHealthStore;
+import com.fongmi.android.tv.setting.SiteBlockSetting;
 import com.fongmi.android.tv.ui.activity.FolderActivity;
 import com.fongmi.android.tv.ui.activity.VideoActivity;
 import com.fongmi.android.tv.ui.adapter.CollectAdapter;
@@ -38,12 +44,16 @@ import java.util.List;
 
 public class CollectFragment extends BaseFragment implements MenuProvider, CollectAdapter.OnClickListener, SearchAdapter.OnClickListener, CustomScroller.Callback {
 
+    private static final int GRID_ITEM_MARGIN_DP = 4;
+    private static final int RESULT_END_PADDING_DP = 8;
+
     private FragmentCollectBinding mBinding;
     private CollectAdapter mCollectAdapter;
     private SearchAdapter mSearchAdapter;
     private CustomScroller mScroller;
     private SiteViewModel mViewModel;
     private List<Site> mSites;
+    private int collectWidth;
 
     public static CollectFragment newInstance(String keyword) {
         return newInstance(keyword, null);
@@ -98,10 +108,10 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     @Override
     protected void initView() {
         mScroller = new CustomScroller(this);
-        setRecyclerView();
-        setViewModel();
         setSites();
         setWidth();
+        setRecyclerView();
+        setViewModel();
         search();
     }
 
@@ -122,7 +132,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         mBinding.recycler.setHasFixedSize(true);
         mBinding.recycler.addOnScrollListener(mScroller);
         mBinding.recycler.setAdapter(mSearchAdapter = new SearchAdapter(this));
-        ((GridLayoutManager) (mBinding.recycler.getLayoutManager())).setSpanCount(getCount());
+        setResultLayout(false);
     }
 
     private void setViewModel() {
@@ -136,6 +146,7 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
         mSites = new ArrayList<>();
         for (Site site : VodConfig.get().getSites()) {
             if (!site.isSearchable()) continue;
+            if (SiteBlockSetting.isBlocked(site)) continue;
             if (!TextUtils.isEmpty(siteKey) && !site.getKey().equals(siteKey)) continue;
             mSites.add(site);
         }
@@ -145,11 +156,12 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     private void setWidth() {
         int width = 0;
         int space = ResUtil.dp2px(48);
-        int maxWidth = ResUtil.getScreenWidth() / (getCount() + 1) - ResUtil.dp2px(40);
+        int maxWidth = ResUtil.getScreenWidth() / 2 - ResUtil.dp2px(40);
         for (Site site : mSites) width = Math.max(width, ResUtil.getTextWidth(site.getName(), 14));
         int contentWidth = width + space;
         int minWidth = ResUtil.dp2px(120);
         int finalWidth = Math.max(minWidth, Math.min(contentWidth, maxWidth));
+        collectWidth = finalWidth;
         ViewGroup.LayoutParams params = mBinding.collect.getLayoutParams();
         params.width = finalWidth;
         mBinding.collect.setLayoutParams(params);
@@ -161,9 +173,34 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
     }
 
     private int getCount() {
-        int count = ResUtil.isLand(requireActivity()) ? 2 : 1;
-        if (ResUtil.isPad()) count++;
-        return count;
+        return Setting.getSearchColumn();
+    }
+
+    private boolean isGrid() {
+        return getCount() == 2;
+    }
+
+    private int[] getGridSize() {
+        int span = getCount();
+        int margin = ResUtil.dp2px(GRID_ITEM_MARGIN_DP);
+        int space = ResUtil.dp2px(RESULT_END_PADDING_DP) + margin * 2 * span;
+        int width = (ResUtil.getScreenWidth(requireActivity()) - collectWidth - space) / span;
+        width = Math.max(ResUtil.dp2px(96), width);
+        return new int[]{width, (int) (width / 0.75f), margin};
+    }
+
+    private void setResultLayout(boolean scrollTop) {
+        setWidth();
+        int count = getCount();
+        ((GridLayoutManager) (mBinding.recycler.getLayoutManager())).setSpanCount(count);
+        mSearchAdapter.setGrid(isGrid(), getGridSize());
+        if (scrollTop) mBinding.recycler.scrollToPosition(0);
+    }
+
+    private void onColumnToggle() {
+        Setting.putSearchColumn(getCount() == 1 ? 2 : 1);
+        setResultLayout(true);
+        requireActivity().invalidateOptionsMenu();
     }
 
     private void setCollect(Result result) {
@@ -208,11 +245,24 @@ public class CollectFragment extends BaseFragment implements MenuProvider, Colle
 
     @Override
     public void onCreateMenu(@NonNull Menu menu, @NonNull MenuInflater menuInflater) {
+        menuInflater.inflate(R.menu.menu_collect, menu);
+    }
+
+    @Override
+    public void onPrepareMenu(@NonNull Menu menu) {
+        MenuItem item = menu.findItem(R.id.action_column);
+        if (item == null) return;
+        Drawable icon = ContextCompat.getDrawable(requireContext(), getCount() == 1 ? R.drawable.ic_site_double_column : R.drawable.ic_site_single_column);
+        if (icon == null) return;
+        icon = icon.mutate();
+        icon.setTint(Color.WHITE);
+        item.setIcon(icon);
     }
 
     @Override
     public boolean onMenuItemSelected(@NonNull MenuItem menuItem) {
         if (menuItem.getItemId() == android.R.id.home) requireActivity().getOnBackPressedDispatcher().onBackPressed();
+        if (menuItem.getItemId() == R.id.action_column) onColumnToggle();
         return true;
     }
 

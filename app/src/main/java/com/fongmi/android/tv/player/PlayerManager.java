@@ -4,6 +4,9 @@ import android.net.Uri;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
+import androidx.media3.common.C;
+import androidx.media3.common.Effect;
+import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MediaTitle;
@@ -11,6 +14,7 @@ import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.Tracks;
 import androidx.media3.common.VideoSize;
+import androidx.media3.effect.ColorLut;
 import androidx.media3.ui.danmaku.DanmakuConfig;
 import androidx.media3.ui.danmaku.DanmakuController;
 
@@ -26,6 +30,12 @@ import com.fongmi.android.tv.player.engine.ExoPlayerEngine;
 import com.fongmi.android.tv.player.engine.IjkPlayerEngine;
 import com.fongmi.android.tv.player.engine.PlaySpec;
 import com.fongmi.android.tv.player.engine.PlayerEngine;
+import com.fongmi.android.tv.player.lut.DynamicLutEffect;
+import com.fongmi.android.tv.player.lut.LutEffectFactory;
+import com.fongmi.android.tv.player.lut.LutEligibility;
+import com.fongmi.android.tv.player.lut.LutPreset;
+import com.fongmi.android.tv.player.lut.LutSetting;
+import com.fongmi.android.tv.player.lut.LutStore;
 import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.setting.PlayerSetting;
 import com.fongmi.android.tv.utils.LocalProxyDebug;
@@ -38,35 +48,58 @@ import com.github.catvod.net.OkHttp;
 import com.google.common.net.HttpHeaders;
 
 import java.text.DecimalFormat;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class PlayerManager implements ParseCallback {
 
+    public static final String RELOAD_LUT_WARMUP = "__webhtv_lut_warmup_reload__";
+
     private static final long LOCAL_PROXY_READY_TIMEOUT_MS = 5000;
     private static final long LOCAL_PROXY_RETRY_DELAY_MS = 1000;
     private static final int LOCAL_PROXY_MAX_RETRY = 2;
-    private static final float[] SPEED_PRESETS = new float[]{0.5f, 0.75f, 1f, 1.2f, 1.5f, 2f, 3f, 5f};
+    private static final int LUT_WARMUP_RECOVERED_ERROR_REFRESH_THRESHOLD = 3;
+    private static final float[] SPEED_PRESETS = new float[]{0.5f, 0.75f, 1f, 1.2f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f, 5f};
     private static final DecimalFormat SPEED_FORMAT = new DecimalFormat("0.##x");
 
     private final Runnable runnable;
     private final Callback callback;
+    private final DynamicLutEffect dynamicLutEffect;
     private DanmakuController danmakuController;
     private PlayerEngine engine;
     private VideoSize videoSize;
     private ParseJob parseJob;
     private PlaySpec spec;
     private Player player;
+    private String currentDanmakuUrl;
 
     private boolean initTrack;
+    private boolean exoFallbackTried;
+    private boolean realtimeFallbackTried;
+    private boolean videoEffectsActive;
+    private boolean videoEffectsDirty;
+    private boolean lutAppliedForItem;
+    private boolean lutApplyInProgress;
+    private boolean lutPipelineReadyForItem;
+    private boolean lutPipelinePrepareInProgress;
+    private boolean pendingLutPreview;
+    private boolean waitingLutBeforePlay;
+    private boolean lutWarmupRecoveryActive;
+    private boolean lutWarmupRefreshRequested;
+    private boolean lutWarmupReloadPreviewPending;
+    private boolean lutAllowed = true;
     private int playerType;
     private int retry;
     private int localProxyRetry;
     private int prepareSeq;
+    private int lutApplySeq;
+    private int lutWarmupRecoveredErrors;
 
     public PlayerManager(Callback callback) {
-        this.runnable = () -> callback.onError(ResUtil.getString(R.string.error_play_timeout));
+        this.runnable = this::onPlaybackTimeout;
+        this.dynamicLutEffect = new DynamicLutEffect();
         this.playerType = PlayerSetting.getPlayer();
         this.engine = buildEngine(playerType, PlayerEngine.HARD);
         this.player = engine.getPlayer();
@@ -75,12 +108,54 @@ public class PlayerManager implements ParseCallback {
 
     public void release() {
         prepareSeq++;
+        lutApplySeq++;
         player.removeListener(listener);
         App.removeCallbacks(runnable);
         if (engine == null) return;
         engine.release();
         engine = null;
         player = null;
+        videoEffectsActive = false;
+        videoEffectsDirty = false;
+        lutAppliedForItem = false;
+        lutApplyInProgress = false;
+        lutPipelineReadyForItem = false;
+        lutPipelinePrepareInProgress = false;
+        pendingLutPreview = false;
+        waitingLutBeforePlay = false;
+        lutWarmupReloadPreviewPending = false;
+        clearLutWarmupRecovery();
+        currentDanmakuUrl = null;
+    }
+
+    private void onPlaybackTimeout() {
+        if (retryLutWarmupByRefresh("timeout")) return;
+        if (retryRealtimeFallback("timeout")) return;
+        if (retryExoFallback("timeout")) return;
+        callback.onError(ResUtil.getString(R.string.error_play_timeout));
+    }
+
+    private void resetLutRuntimeState(String reason, boolean clearEngineEffects) {
+        lutApplySeq++;
+        if (clearEngineEffects && engine != null && videoEffectsActive) {
+            try {
+                engine.setVideoEffects(Collections.emptyList());
+                if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "clear effects before reset reason=%s", reason);
+            } catch (Throwable e) {
+                if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "clear effects before reset failed reason=%s error=%s", reason, causeChain(e));
+            }
+        }
+        dynamicLutEffect.clear();
+        videoEffectsActive = false;
+        videoEffectsDirty = false;
+        lutAppliedForItem = false;
+        lutApplyInProgress = false;
+        lutPipelineReadyForItem = false;
+        lutPipelinePrepareInProgress = false;
+        pendingLutPreview = false;
+        waitingLutBeforePlay = false;
+        lutWarmupReloadPreviewPending = false;
+        clearLutWarmupRecovery();
     }
 
     public Player getPlayer() {
@@ -187,8 +262,16 @@ public class PlayerManager implements ParseCallback {
         return player.getCurrentPosition();
     }
 
+    public long getBufferedDuration() {
+        return Math.max(0, player.getBufferedPosition() - getPosition());
+    }
+
     public String getSizeText() {
         return (getVideoWidth() == 0 && getVideoHeight() == 0) ? "" : getVideoWidth() + " x " + getVideoHeight();
+    }
+
+    public Format getVideoFormat() {
+        return engine.getVideoFormat();
     }
 
     public String getSpeedText() {
@@ -201,6 +284,20 @@ public class PlayerManager implements ParseCallback {
 
     public String getPlayerText() {
         return ResUtil.getStringArray(R.array.select_player_kernel)[playerType];
+    }
+
+    public String getLutText() {
+        return LutSetting.getButtonText();
+    }
+
+    public void setLutAllowed(boolean allowed) {
+        if (lutAllowed == allowed) return;
+        lutAllowed = allowed;
+        if (!allowed) resetLutRuntimeState("lut_disallowed", true);
+    }
+
+    public String getLutUnavailableReason() {
+        return LutEligibility.getUnavailableReason(engine, spec);
     }
 
     public boolean isIjk() {
@@ -305,7 +402,7 @@ public class PlayerManager implements ParseCallback {
     }
 
     public void stop() {
-        player.stop();
+        engine.stop();
         stopParse();
     }
 
@@ -351,7 +448,16 @@ public class PlayerManager implements ParseCallback {
 
     public void clear() {
         prepareSeq++;
+        lutApplySeq++;
         spec = null;
+        currentDanmakuUrl = null;
+        lutAppliedForItem = false;
+        lutApplyInProgress = false;
+        lutPipelineReadyForItem = false;
+        lutPipelinePrepareInProgress = false;
+        pendingLutPreview = false;
+        waitingLutBeforePlay = false;
+        clearLutWarmupRecovery();
     }
 
     public void resetTrack() {
@@ -369,6 +475,10 @@ public class PlayerManager implements ParseCallback {
     }
 
     public void switchPlayer(int type) {
+        switchPlayer(type, true);
+    }
+
+    private void switchPlayer(int type, boolean persist) {
         if (engine == null || player == null) return;
         type = PlayerSetting.sanitizePlayer(type);
         if (type == playerType) return;
@@ -376,9 +486,15 @@ public class PlayerManager implements ParseCallback {
         float speed = getSpeed();
         boolean repeat = isRepeatOne();
         int decode = engine.getDecode();
+        prepareSeq++;
+        resetLutRuntimeState("switch_player", true);
         engine.release();
         playerType = type;
-        PlayerSetting.putPlayer(type);
+        if (persist) {
+            exoFallbackTried = false;
+            PlayerSetting.putPlayer(type);
+        }
+        if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "switch player type=%d persist=%s position=%d spec=%s", type, persist, position, debugSpec());
         engine = buildEngine(playerType, decode);
         player = engine.getPlayer();
         callback.onPlayerRebuild(player);
@@ -391,6 +507,14 @@ public class PlayerManager implements ParseCallback {
 
     private void rebuildPlayer() {
         player = engine.rebuild(listener);
+        videoEffectsActive = false;
+        videoEffectsDirty = false;
+        lutAppliedForItem = false;
+        lutApplyInProgress = false;
+        lutPipelineReadyForItem = false;
+        lutPipelinePrepareInProgress = false;
+        pendingLutPreview = false;
+        waitingLutBeforePlay = false;
         callback.onPlayerRebuild(player);
     }
 
@@ -407,14 +531,22 @@ public class PlayerManager implements ParseCallback {
 
     public void start(PlaySpec spec, long timeout) {
         this.spec = spec;
+        retry = 0;
+        exoFallbackTried = false;
+        realtimeFallbackTried = false;
         localProxyRetry = 0;
+        currentDanmakuUrl = null;
         setMediaItem(timeout);
     }
 
     public void parse(String key, Result result, boolean useParse, MediaMetadata metadata) {
         stopParse();
         spec = PlaySpec.fromParse(result, key, metadata);
+        retry = 0;
+        exoFallbackTried = false;
+        realtimeFallbackTried = false;
         localProxyRetry = 0;
+        currentDanmakuUrl = null;
         parseJob = ParseJob.create(this).start(result, useParse);
     }
 
@@ -445,7 +577,7 @@ public class PlayerManager implements ParseCallback {
             boolean ready = LocalProxyDebug.awaitReady(url, LOCAL_PROXY_READY_TIMEOUT_MS);
             App.post(() -> {
                 if (seq != prepareSeq || spec != target || engine == null) {
-                    SpiderDebug.log("player", "local proxy await skip seq=%d current=%d ready=%s", seq, prepareSeq, ready);
+                    if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "local proxy await skip seq=%d current=%d ready=%s", seq, prepareSeq, ready);
                     return;
                 }
                 if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "local proxy await done seq=%d ready=%s spec=%s", seq, ready, debugSpec());
@@ -457,11 +589,357 @@ public class PlayerManager implements ParseCallback {
     private void setMediaItemNow(long timeout, boolean notifyPrepare) {
         if (spec == null || spec.getUrl() == null || engine == null) return;
         if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "setMediaItem timeout=%d notify=%s spec=%s", timeout, notifyPrepare, debugSpec());
+        App.removeCallbacks(runnable);
         setDanmakus(spec.getDanmakus());
+        prepareLutPipeline();
+        initTrack = false;
+        waitingLutBeforePlay = false;
         engine.start(spec.checkUa());
         App.post(runnable, timeout);
         if (notifyPrepare) callback.onPrepare();
-        initTrack = false;
+    }
+
+    private void prepareLutPipeline() {
+        lutApplySeq++;
+        lutAppliedForItem = false;
+        lutApplyInProgress = false;
+        lutPipelineReadyForItem = false;
+        lutPipelinePrepareInProgress = false;
+        pendingLutPreview = false;
+        dynamicLutEffect.clear();
+        clearLutWarmupRecovery();
+        if (videoEffectsDirty) {
+            if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "rebuild clean player before media item reason=prepare spec=%s", debugSpec());
+            rebuildPlayer();
+        }
+        clearVideoEffects("prepare");
+    }
+
+    private boolean shouldPrepareLutBeforePlay() {
+        return false;
+    }
+
+    public void applyLut(boolean notify) {
+        applyLut(notify, false);
+    }
+
+    public void applyLutPreview(boolean notify) {
+        applyLut(notify, true);
+    }
+
+    private void applyLut(boolean notify, boolean preview) {
+        if (engine == null) return;
+        int seq = ++lutApplySeq;
+        if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "request seq=%d notify=%s preview=%s enabled=%s preset=%s state=%s videoFormat=%s tracksEmpty=%s active=%s dirty=%s applied=%s applying=%s pendingPreview=%s", seq, notify, preview, LutSetting.isEnabled(), LutSetting.getPresetId(), stateName(player.getPlaybackState()), engine.getVideoFormat(), engine.getCurrentTracks() == null || engine.getCurrentTracks().isEmpty(), videoEffectsActive, videoEffectsDirty, lutAppliedForItem, lutApplyInProgress, pendingLutPreview);
+        if (!lutAllowed) {
+            lutAppliedForItem = true;
+            lutApplyInProgress = false;
+            pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
+            setNeutralVideoEffects("disallowed");
+            completeLutBeforePlay("disallowed");
+            return;
+        }
+        if (!LutSetting.isEnabled()) {
+            if (waitingLutBeforePlay && shouldWaitForVideoFormat()) {
+                if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "wait video format before neutral start reason=off state=%s spec=%s", stateName(player.getPlaybackState()), debugSpec());
+                return;
+            }
+            lutAppliedForItem = true;
+            lutApplyInProgress = false;
+            pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
+            setNeutralVideoEffects("off");
+            completeLutBeforePlay("off");
+            return;
+        }
+        LutPreset preset = LutStore.find(LutSetting.getPresetId());
+        if (preset == null) {
+            if (waitingLutBeforePlay && shouldWaitForVideoFormat()) {
+                if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "wait video format before neutral start reason=missing state=%s spec=%s", stateName(player.getPlaybackState()), debugSpec());
+                return;
+            }
+            lutAppliedForItem = true;
+            lutApplyInProgress = false;
+            pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
+            setNeutralVideoEffects("missing");
+            completeLutBeforePlay("missing");
+            if (notify) Notify.show(R.string.lut_missing);
+            return;
+        }
+        String reason = getLutUnavailableReason();
+        if (!TextUtils.isEmpty(reason)) {
+            lutAppliedForItem = true;
+            lutApplyInProgress = false;
+            pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
+            setNeutralVideoEffects(reason);
+            completeLutBeforePlay(reason);
+            if (notify) Notify.show(reason);
+            return;
+        }
+        if (shouldWaitForLutFormat()) {
+            lutAppliedForItem = false;
+            lutApplyInProgress = false;
+            if (notify || preview) pendingLutPreview = preview;
+            if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "wait video format notify=%s preview=%s state=%s spec=%s", notify, preview, stateName(player.getPlaybackState()), debugSpec());
+            return;
+        }
+        if (notify || preview) pendingLutPreview = preview;
+        if (!ensureLutPipelineReadyForCurrentItem("request")) {
+            return;
+        }
+        lutAppliedForItem = false;
+        lutApplyInProgress = true;
+        pendingLutPreview = false;
+        int strength = LutSetting.getStrength();
+        int previewSeconds = LutSetting.getPreviewSeconds();
+        Task.execute(() -> {
+            long start = System.currentTimeMillis();
+            try {
+                ColorLut colorLut = LutEffectFactory.createColorLut(preset, strength);
+                if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "create dynamic preset=%s format=%s strength=%d preview=%s seconds=%d cost=%dms", preset.getId(), preset.getFormat(), strength, preview, previewSeconds, System.currentTimeMillis() - start);
+                App.post(() -> applyLutColor(seq, colorLut, notify, preview, previewSeconds));
+            } catch (Throwable e) {
+                if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "create failed preset=%s strength=%d error=%s", preset.getId(), strength, causeChain(e));
+                App.post(() -> {
+                    if (seq != lutApplySeq || engine == null) return;
+                    lutApplyInProgress = false;
+                    setNeutralVideoEffects("error");
+                    completeLutBeforePlay("error");
+                    if (notify) Notify.show(R.string.lut_apply_failed);
+                });
+            }
+        });
+    }
+
+    private void applyLutColor(int seq, ColorLut colorLut, boolean notify, boolean preview, int previewSeconds) {
+        if (seq != lutApplySeq || engine == null) return;
+        String reason = getLutUnavailableReason();
+        if (!TextUtils.isEmpty(reason)) {
+            dynamicLutEffect.clear();
+            lutApplyInProgress = false;
+            setNeutralVideoEffects(reason);
+            completeLutBeforePlay(reason);
+            if (notify) Notify.show(reason);
+            return;
+        }
+        if (shouldWaitForLutFormat()) {
+            lutAppliedForItem = false;
+            lutApplyInProgress = false;
+            if (notify || preview) pendingLutPreview = preview;
+            if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "wait video format before set effects preview=%s spec=%s", preview, debugSpec());
+            return;
+        }
+        dynamicLutEffect.set(colorLut, preview, previewSeconds);
+        if (safeSetVideoEffects(dynamicLutEffect.effects(), preview ? "preview_dynamic" : "apply_dynamic")) {
+            lutAppliedForItem = true;
+            pendingLutPreview = false;
+        } else {
+            lutAppliedForItem = false;
+        }
+        lutApplyInProgress = false;
+        completeLutBeforePlay(preview ? "preview" : "apply");
+    }
+
+    private void applyLutForCurrentItem() {
+        if (engine == null) return;
+        if (!lutAllowed) {
+            if (lutAppliedForItem && !videoEffectsActive && !waitingLutBeforePlay) return;
+            lutAppliedForItem = true;
+            lutApplyInProgress = false;
+            pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
+            setNeutralVideoEffects("auto_disallowed");
+            completeLutBeforePlay("auto_disallowed");
+            return;
+        }
+        if (!LutSetting.isEnabled()) {
+            if (lutAppliedForItem && !videoEffectsActive && !waitingLutBeforePlay) return;
+            lutAppliedForItem = true;
+            lutApplyInProgress = false;
+            pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
+            setNeutralVideoEffects("auto_off");
+            completeLutBeforePlay("auto_off");
+            return;
+        }
+        String reason = getLutUnavailableReason();
+        if (!TextUtils.isEmpty(reason)) {
+            lutAppliedForItem = true;
+            lutApplyInProgress = false;
+            pendingLutPreview = false;
+            lutWarmupReloadPreviewPending = false;
+            setNeutralVideoEffects(reason);
+            completeLutBeforePlay(reason);
+            return;
+        }
+        if (shouldWaitForLutFormat()) {
+            if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "wait video format before auto apply state=%s spec=%s", stateName(player.getPlaybackState()), debugSpec());
+            return;
+        }
+        if (lutApplyInProgress) return;
+        if (lutAppliedForItem) return;
+        if (!ensureLutPipelineReadyForCurrentItem("auto")) return;
+        boolean preview = pendingLutPreview || lutWarmupReloadPreviewPending;
+        lutWarmupReloadPreviewPending = false;
+        applyLut(false, preview);
+    }
+
+    private void completeLutBeforePlay(String reason) {
+        if (!waitingLutBeforePlay || player == null) return;
+        waitingLutBeforePlay = false;
+        if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "start playback after lut decision reason=%s active=%s dirty=%s", reason, videoEffectsActive, videoEffectsDirty);
+        player.play();
+    }
+
+    private boolean ensureLutPipelineReadyForCurrentItem(String reason) {
+        if (lutPipelineReadyForItem) return true;
+        if (lutPipelinePrepareInProgress) return false;
+        if (!canWarmLutPipeline()) return true;
+        if (shouldWaitForVideoFormat()) {
+            if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "wait video format before pipeline warmup reason=%s state=%s spec=%s", reason, stateName(player.getPlaybackState()), debugSpec());
+            return false;
+        }
+        String unavailable = getLutUnavailableReason();
+        if (!TextUtils.isEmpty(unavailable)) return true;
+        return prepareLutPipelineForCurrentItem(reason);
+    }
+
+    private boolean prepareLutPipelineForCurrentItem(String reason) {
+        if (spec == null || engine == null || player == null) return true;
+        lutPipelinePrepareInProgress = true;
+        lutAppliedForItem = false;
+        lutApplyInProgress = false;
+        dynamicLutEffect.clear();
+        long position = Math.max(0, getPosition());
+        boolean playWhenReady = player.getPlayWhenReady();
+        float speed = getSpeed();
+        if (!safeSetVideoEffects(dynamicLutEffect.effects(), reason + "_prepare_dynamic_passthrough")) {
+            lutPipelinePrepareInProgress = false;
+            return true;
+        }
+        lutPipelineReadyForItem = true;
+        if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "prepare current item with effects reason=%s position=%d play=%s spec=%s", reason, position, playWhenReady, debugSpec());
+        startLutWarmupRecovery();
+        engine.restart(spec.checkUa(), position, playWhenReady);
+        if (speed != 1f) setSpeed(speed);
+        lutPipelinePrepareInProgress = false;
+        return false;
+    }
+
+    private void startLutWarmupRecovery() {
+        lutWarmupRecoveryActive = true;
+        lutWarmupRefreshRequested = false;
+        lutWarmupRecoveredErrors = 0;
+    }
+
+    private void clearLutWarmupRecovery() {
+        lutWarmupRecoveryActive = false;
+        lutWarmupRefreshRequested = false;
+        lutWarmupRecoveredErrors = 0;
+    }
+
+    private boolean retryLutWarmupByRefresh(String reason) {
+        if (!lutWarmupRecoveryActive || lutWarmupRefreshRequested || !LutSetting.isEnabled()) return false;
+        lutWarmupRefreshRequested = true;
+        lutWarmupRecoveryActive = false;
+        lutWarmupReloadPreviewPending = true;
+        App.removeCallbacks(runnable);
+        if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "request playback refresh after warmup failure reason=%s errors=%d spec=%s", reason, lutWarmupRecoveredErrors, debugSpec());
+        callback.onReload(RELOAD_LUT_WARMUP);
+        return true;
+    }
+
+    private boolean retryLutWarmupByRefresh(PlayerEngine.ErrorAction action, PlaybackException e) {
+        if (!lutWarmupRecoveryActive || lutWarmupRefreshRequested || !LutSetting.isEnabled()) return false;
+        if (action == PlayerEngine.ErrorAction.RECOVERED && ++lutWarmupRecoveredErrors < LUT_WARMUP_RECOVERED_ERROR_REFRESH_THRESHOLD) return false;
+        if (action != PlayerEngine.ErrorAction.RECOVERED && action != PlayerEngine.ErrorAction.FATAL && action != PlayerEngine.ErrorAction.RELOAD) return false;
+        return retryLutWarmupByRefresh("error_" + e.errorCode + "_" + action);
+    }
+
+    private boolean shouldWaitForLutFormat() {
+        if (engine == null || !LutSetting.isEnabled()) return false;
+        return shouldWaitForVideoFormat();
+    }
+
+    private boolean shouldWaitForVideoFormat() {
+        if (engine == null) return false;
+        Format currentFormat = engine.getVideoFormat();
+        if (isUsableVideoFormat(currentFormat)) return false;
+        Tracks tracks = engine.getCurrentTracks();
+        if (tracks == null || tracks.isEmpty()) return true;
+        boolean hasVideo = false;
+        boolean hasUsableFormat = false;
+        for (Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_VIDEO) continue;
+            hasVideo = true;
+            for (int i = 0; i < group.length; i++) {
+                if (isUsableVideoFormat(group.getTrackFormat(i))) {
+                    hasUsableFormat = true;
+                    break;
+                }
+            }
+            if (hasUsableFormat) break;
+        }
+        return hasVideo && !hasUsableFormat;
+    }
+
+    private boolean isUsableVideoFormat(Format format) {
+        if (format == null) return false;
+        return !TextUtils.isEmpty(format.sampleMimeType) || !TextUtils.isEmpty(format.codecs) || format.colorInfo != null || format.width > 0 || format.height > 0;
+    }
+
+    private void clearVideoEffects(String reason) {
+        dynamicLutEffect.clear();
+        safeSetVideoEffects(Collections.emptyList(), reason);
+    }
+
+    private void setNeutralVideoEffects(String reason) {
+        dynamicLutEffect.clear();
+        if (canKeepWarmNeutralEffects()) safeSetVideoEffects(dynamicLutEffect.effects(), reason + "_dynamic_passthrough");
+        else clearVideoEffects(reason);
+    }
+
+    private boolean canKeepWarmNeutralEffects() {
+        if (!LutSetting.isEnabled()) return false;
+        if (!canWarmLutPipeline()) return false;
+        if (shouldWaitForVideoFormat()) return false;
+        return TextUtils.isEmpty(getLutUnavailableReason());
+    }
+
+    private boolean canWarmLutPipeline() {
+        if (!lutAllowed) return false;
+        if (engine == null || !engine.supportsVideoEffects()) return false;
+        if (spec != null && spec.getDrm() != null) return false;
+        if (PlayerSetting.isTunnel()) return false;
+        if (engine.getDecode() == PlayerEngine.SOFT) return false;
+        if (PlayerSetting.isVideoPrefer()) return false;
+        return true;
+    }
+
+    private boolean safeSetVideoEffects(List<Effect> effects, String reason) {
+        if (engine == null) return false;
+        boolean empty = effects == null || effects.isEmpty();
+        if (empty && !videoEffectsActive) {
+            if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "skip clear effects reason=%s", reason);
+            return false;
+        }
+        try {
+            engine.setVideoEffects(empty ? Collections.emptyList() : effects);
+            if (empty) {
+                videoEffectsActive = false;
+            } else {
+                videoEffectsActive = true;
+                videoEffectsDirty = true;
+            }
+            if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "set effects=%d reason=%s active=%s dirty=%s", empty ? 0 : effects.size(), reason, videoEffectsActive, videoEffectsDirty);
+            return true;
+        } catch (Throwable e) {
+            if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "set effects failed reason=%s error=%s", reason, causeChain(e));
+            return false;
+        }
     }
 
     private void setDanmakus(List<Danmaku> items) {
@@ -471,8 +949,15 @@ public class PlayerManager implements ParseCallback {
     public void setDanmaku(Danmaku item) {
         if (danmakuController == null) return;
         if (spec != null) spec.setDanmaku(item);
-        if (item.isEmpty()) danmakuController.clearItems();
-        else danmakuController.setDataSource(Uri.parse(item.getRealUrl()));
+        if (item.isEmpty()) {
+            if (currentDanmakuUrl != null) danmakuController.clearItems();
+            currentDanmakuUrl = null;
+            return;
+        }
+        String url = item.getRealUrl();
+        if (TextUtils.equals(currentDanmakuUrl, url)) return;
+        currentDanmakuUrl = url;
+        danmakuController.setDataSource(Uri.parse(url));
     }
 
     public void addDanmaku(Danmaku item) {
@@ -554,6 +1039,8 @@ public class PlayerManager implements ParseCallback {
 
         void onError(String msg);
 
+        void onReload(String msg);
+
         void onPlayerRebuild(Player newPlayer);
     }
 
@@ -563,19 +1050,26 @@ public class PlayerManager implements ParseCallback {
         public void onPlaybackStateChanged(int state) {
             if (state != Player.STATE_IDLE) App.removeCallbacks(runnable);
             if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "state=%s spec=%s", stateName(state), debugSpec());
+            if (state == Player.STATE_READY) {
+                clearLutWarmupRecovery();
+                applyLutForCurrentItem();
+            }
         }
 
         @Override
         public void onVideoSizeChanged(@NonNull VideoSize size) {
             videoSize = size;
+            applyLutForCurrentItem();
         }
 
         @Override
         public void onTracksChanged(@NonNull Tracks tracks) {
-            if (tracks.isEmpty() || initTrack) return;
-            setTrack(Track.find(getKey()));
-            callback.onTracksChanged();
-            initTrack = true;
+            if (!tracks.isEmpty() && !initTrack) {
+                setTrack(Track.find(getKey()));
+                callback.onTracksChanged();
+                initTrack = true;
+            }
+            applyLutForCurrentItem();
         }
 
         @Override
@@ -585,10 +1079,19 @@ public class PlayerManager implements ParseCallback {
 
         @Override
         public void onPlayerError(@NonNull PlaybackException e) {
+            App.removeCallbacks(runnable);
             PlayerEngine.ErrorAction action = engine.handleError(e);
             if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "error code=%d message=%s action=%s retry=%d spec=%s cause=%s", e.errorCode, e.getMessage(), action, retry, debugSpec(), causeChain(e));
             LocalProxyDebug.dumpIfLocalFailure(spec == null ? null : spec.getUrl(), e);
+            if (retryLutFailure(e)) return;
+            if (retryLutWarmupByRefresh(action, e)) return;
             if (action == PlayerEngine.ErrorAction.FATAL && retryLocalProxy(e)) return;
+            if (action == PlayerEngine.ErrorAction.FATAL && retryRealtimeFallback(e)) return;
+            if (action == PlayerEngine.ErrorAction.FATAL && retryExoFallback(e)) return;
+            if (action == PlayerEngine.ErrorAction.RELOAD) {
+                callback.onReload(engine.getErrorMessage(e));
+                return;
+            }
             if (action == PlayerEngine.ErrorAction.RECOVERED) {
                 if (spec != null) setDanmakus(spec.getDanmakus());
                 return;
@@ -603,6 +1106,22 @@ public class PlayerManager implements ParseCallback {
         }
     };
 
+    private boolean retryLutFailure(PlaybackException e) {
+        if (!LutSetting.isEnabled()) return false;
+        if (e.errorCode != PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED && e.errorCode != PlaybackException.ERROR_CODE_VIDEO_FRAME_PROCESSOR_INIT_FAILED) return false;
+        App.removeCallbacks(runnable);
+        LutSetting.select(null);
+        lutAppliedForItem = true;
+        lutApplyInProgress = false;
+        pendingLutPreview = false;
+        lutWarmupReloadPreviewPending = false;
+        clearVideoEffects("lut_error_retry");
+        Notify.show(R.string.lut_apply_failed);
+        if (SpiderDebug.isEnabled()) SpiderDebug.log("lut", "disable and retry after frame processing error code=%d spec=%s cause=%s", e.errorCode, debugSpec(), causeChain(e));
+        if (spec != null) setMediaItem();
+        return true;
+    }
+
     private boolean retryLocalProxy(PlaybackException e) {
         if (spec == null || !LocalProxyDebug.isLocalProxyUrl(spec.getUrl())) return false;
         if (!LocalProxyDebug.isConnectionRefused(e)) return false;
@@ -615,6 +1134,53 @@ public class PlayerManager implements ParseCallback {
             if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "local proxy retry start attempt=%d spec=%s", attempt, debugSpec());
             setMediaItem();
         }, LOCAL_PROXY_RETRY_DELAY_MS);
+        return true;
+    }
+
+    private boolean retryRealtimeFallback(PlaybackException e) {
+        if (!canFallbackRealtimeToIjk()) return false;
+        realtimeFallbackTried = true;
+        exoFallbackTried = true;
+        App.removeCallbacks(runnable);
+        if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "exo realtime fallback to ijk code=%d message=%s spec=%s cause=%s", e.errorCode, e.getMessage(), debugSpec(), causeChain(e));
+        switchPlayer(PlayerSetting.IJK, false);
+        return true;
+    }
+
+    private boolean retryRealtimeFallback(String reason) {
+        if (!canFallbackRealtimeToIjk()) return false;
+        realtimeFallbackTried = true;
+        exoFallbackTried = true;
+        App.removeCallbacks(runnable);
+        if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "exo realtime fallback to ijk reason=%s spec=%s", reason, debugSpec());
+        switchPlayer(PlayerSetting.IJK, false);
+        return true;
+    }
+
+    private boolean canFallbackRealtimeToIjk() {
+        if (playerType != PlayerSetting.EXO) return false;
+        if (realtimeFallbackTried || spec == null || TextUtils.isEmpty(spec.getUrl())) return false;
+        String scheme = spec.getUri().getScheme();
+        return "rtp".equalsIgnoreCase(scheme) || "udp".equalsIgnoreCase(scheme);
+    }
+
+    private boolean retryExoFallback(PlaybackException e) {
+        if (playerType != PlayerSetting.IJK) return false;
+        if (exoFallbackTried || spec == null || TextUtils.isEmpty(spec.getUrl())) return false;
+        exoFallbackTried = true;
+        App.removeCallbacks(runnable);
+        if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "ijk fatal fallback to exo code=%d message=%s spec=%s cause=%s", e.errorCode, e.getMessage(), debugSpec(), causeChain(e));
+        switchPlayer(PlayerSetting.EXO, false);
+        return true;
+    }
+
+    private boolean retryExoFallback(String reason) {
+        if (playerType != PlayerSetting.IJK) return false;
+        if (exoFallbackTried || spec == null || TextUtils.isEmpty(spec.getUrl())) return false;
+        exoFallbackTried = true;
+        App.removeCallbacks(runnable);
+        if (SpiderDebug.isEnabled()) SpiderDebug.log("player", "ijk fallback to exo reason=%s spec=%s", reason, debugSpec());
+        switchPlayer(PlayerSetting.EXO, false);
         return true;
     }
 }

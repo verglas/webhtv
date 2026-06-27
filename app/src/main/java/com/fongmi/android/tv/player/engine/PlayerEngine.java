@@ -1,5 +1,7 @@
 package com.fongmi.android.tv.player.engine;
 
+import androidx.media3.common.Effect;
+import androidx.media3.common.Format;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MediaTitle;
 import androidx.media3.common.PlaybackException;
@@ -32,6 +34,22 @@ public interface PlayerEngine {
 
     void start(PlaySpec spec);
 
+    default void start(PlaySpec spec, boolean playWhenReady) {
+        start(spec);
+    }
+
+    default void start(PlaySpec spec, long position, boolean playWhenReady) {
+        start(spec, playWhenReady);
+    }
+
+    default void restart(PlaySpec spec, long position, boolean playWhenReady) {
+        start(spec, position, playWhenReady);
+    }
+
+    default void stop() {
+        getPlayer().stop();
+    }
+
     void setMetadata(MediaMetadata data);
 
     boolean isLive();
@@ -45,6 +63,17 @@ public interface PlayerEngine {
     boolean haveTrack(int type);
 
     Tracks getCurrentTracks();
+
+    default boolean supportsVideoEffects() {
+        return false;
+    }
+
+    default void setVideoEffects(List<Effect> effects) {
+    }
+
+    default Format getVideoFormat() {
+        return null;
+    }
 
     default boolean haveTitle() {
         return false;
@@ -67,6 +96,7 @@ public interface PlayerEngine {
 
     enum ErrorAction {
         RECOVERED,
+        RELOAD,
         DECODE,
         FATAL
     }

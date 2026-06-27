@@ -1,17 +1,22 @@
 package com.fongmi.android.tv.player.engine;
 
 import androidx.media3.common.C;
+import androidx.media3.common.Effect;
+import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MediaTitle;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.Tracks;
+import androidx.media3.exoplayer.ExoPlayer;
 
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.bean.Track;
 import com.fongmi.android.tv.player.exo.ErrorMsgProvider;
 import com.fongmi.android.tv.player.exo.ExoUtil;
+import com.fongmi.android.tv.player.exo.PlaybackAnalyticsListener;
+import com.fongmi.android.tv.player.exo.PreCache;
 import com.fongmi.android.tv.player.exo.TrackUtil;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.github.catvod.crawler.SpiderDebug;
@@ -22,13 +27,16 @@ import java.util.concurrent.TimeUnit;
 public class ExoPlayerEngine implements PlayerEngine {
 
     private final ErrorMsgProvider provider;
+    private final PreCache preCache;
     private PlaySpec spec;
-    private Player player;
+    private ExoPlayer player;
     private int decode;
+    private boolean playWhenReady;
 
     public ExoPlayerEngine(int decode, Player.Listener listener) {
         this.player = ExoUtil.buildPlayer(decode, listener);
         this.provider = new ErrorMsgProvider();
+        this.preCache = new PreCache();
         this.decode = decode;
     }
 
@@ -39,11 +47,13 @@ public class ExoPlayerEngine implements PlayerEngine {
 
     @Override
     public void release() {
+        preCache.release();
         player.release();
     }
 
     @Override
     public Player rebuild(Player.Listener listener) {
+        preCache.stop();
         player.release();
         SpiderDebug.log("player-engine", "rebuild decode=%d", decode);
         return player = ExoUtil.buildPlayer(decode, listener);
@@ -81,9 +91,39 @@ public class ExoPlayerEngine implements PlayerEngine {
 
     @Override
     public void start(PlaySpec spec) {
+        start(spec, true);
+    }
+
+    @Override
+    public void start(PlaySpec spec, boolean playWhenReady) {
         this.spec = spec;
-        SpiderDebug.log("player-engine", "start decode=%d format=%s headers=%s urlLen=%d", decode, spec.getFormat(), spec.getHeaders() == null ? 0 : spec.getHeaders().size(), spec.getUrl() == null ? 0 : spec.getUrl().length());
-        startInternal();
+        this.playWhenReady = playWhenReady;
+        SpiderDebug.log("player-engine", "start decode=%d format=%s play=%s headers=%s urlLen=%d", decode, spec.getFormat(), playWhenReady, spec.getHeaders() == null ? 0 : spec.getHeaders().size(), spec.getUrl() == null ? 0 : spec.getUrl().length());
+        startInternal(C.TIME_UNSET, playWhenReady);
+    }
+
+    @Override
+    public void start(PlaySpec spec, long position, boolean playWhenReady) {
+        this.spec = spec;
+        this.playWhenReady = playWhenReady;
+        SpiderDebug.log("player-engine", "start decode=%d format=%s position=%d play=%s headers=%s urlLen=%d", decode, spec.getFormat(), position, playWhenReady, spec.getHeaders() == null ? 0 : spec.getHeaders().size(), spec.getUrl() == null ? 0 : spec.getUrl().length());
+        startInternal(position, playWhenReady);
+    }
+
+    @Override
+    public void restart(PlaySpec spec, long position, boolean playWhenReady) {
+        this.spec = spec;
+        this.playWhenReady = playWhenReady;
+        SpiderDebug.log("player-engine", "restart decode=%d format=%s position=%d play=%s headers=%s urlLen=%d", decode, spec.getFormat(), position, playWhenReady, spec.getHeaders() == null ? 0 : spec.getHeaders().size(), spec.getUrl() == null ? 0 : spec.getUrl().length());
+        preCache.stop();
+        player.stop();
+        startInternal(position, playWhenReady);
+    }
+
+    @Override
+    public void stop() {
+        preCache.stop();
+        player.stop();
     }
 
     @Override
@@ -123,6 +163,21 @@ public class ExoPlayerEngine implements PlayerEngine {
     }
 
     @Override
+    public boolean supportsVideoEffects() {
+        return true;
+    }
+
+    @Override
+    public void setVideoEffects(List<Effect> effects) {
+        player.setVideoEffects(effects);
+    }
+
+    @Override
+    public Format getVideoFormat() {
+        return player.getVideoFormat();
+    }
+
+    @Override
     public boolean haveTitle() {
         return !player.getCurrentMediaTitles().isEmpty();
     }
@@ -150,14 +205,23 @@ public class ExoPlayerEngine implements PlayerEngine {
     }
 
     private void startInternal() {
-        startInternal(C.TIME_UNSET);
+        startInternal(C.TIME_UNSET, true);
     }
 
     private void startInternal(long position) {
-        SpiderDebug.log("player-engine", "prepare position=%d decode=%d format=%s", position, decode, spec.getFormat());
-        player.setMediaItem(ExoUtil.getMediaItem(spec, decode), position);
+        startInternal(position, true);
+    }
+
+    private void startInternal(long position, boolean playWhenReady) {
+        this.playWhenReady = playWhenReady;
+        SpiderDebug.log("player-engine", "prepare position=%d decode=%d format=%s play=%s", position, decode, spec.getFormat(), playWhenReady);
+        PlaybackAnalyticsListener.reset();
+        if (!playWhenReady) player.pause();
+        MediaItem item = ExoUtil.getMediaItem(spec, decode);
+        player.setMediaItem(item, position);
+        preCache.start(player, item);
         player.prepare();
-        player.play();
+        if (playWhenReady) player.play();
     }
 
     private ErrorAction seekToDefaultPosition() {

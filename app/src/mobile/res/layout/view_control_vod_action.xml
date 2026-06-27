@@ -9,6 +9,7 @@
     android:scrollbars="none">
 
     <androidx.appcompat.widget.LinearLayoutCompat
+        android:id="@+id/container"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="horizontal">
@@ -35,6 +36,11 @@
             android:text="@string/play_scale" />
 
         <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/lut"
+            style="@style/Control"
+            android:text="@string/play_lut" />
+
+        <com.google.android.material.textview.MaterialTextView
             android:id="@+id/reset"
             style="@style/Control"
             android:text="@string/play_reset" />
@@ -43,11 +49,6 @@
             android:id="@+id/repeat"
             style="@style/Control"
             android:text="@string/play_repeat" />
-
-        <View
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
 
         <com.google.android.material.textview.MaterialTextView
             android:id="@+id/text"

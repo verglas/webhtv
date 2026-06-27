@@ -10,6 +10,9 @@ public class PlayerSetting {
 
     public static final int EXO = 0;
     public static final int IJK = 1;
+    public static final int RENDER_SURFACE = 0;
+    public static final int RENDER_TEXTURE = 1;
+    private static final int DEFAULT_PLAY_CACHE_OPTION = 0;
 
     public static int getPlayer() {
         int player = Prefers.getInt("player", EXO);
@@ -31,11 +34,14 @@ public class PlayerSetting {
     }
 
     public static int getRender() {
-        return Prefers.getInt("render", 0);
+        return Math.min(Math.max(Prefers.getInt("render", RENDER_SURFACE), RENDER_SURFACE), RENDER_TEXTURE);
     }
 
     public static void putRender(int render) {
-        Prefers.put("render", render);
+        int value = Math.min(Math.max(render, RENDER_SURFACE), RENDER_TEXTURE);
+        Prefers.put("render", value);
+        if (isTunnel() && value == RENDER_TEXTURE) Prefers.put("tunnel", false);
+        if (isExoEnhanced() && value == RENDER_TEXTURE) Prefers.put("exo_4k_compat", false);
     }
 
     public static int getSize() {
@@ -54,12 +60,80 @@ public class PlayerSetting {
         Prefers.put("scale", scale);
     }
 
+    public static int getEpisodeColumn() {
+        return Math.min(Math.max(Prefers.getInt("episode_column", 2), 1), 2);
+    }
+
+    public static void putEpisodeColumn(int column) {
+        Prefers.put("episode_column", column == 1 ? 1 : 2);
+    }
+
     public static int getBuffer() {
         return Math.min(Math.max(Prefers.getInt("buffer"), 1), 10);
     }
 
     public static void putBuffer(int buffer) {
         Prefers.put("buffer", buffer);
+    }
+
+    public static int getBufferBytesOption() {
+        return Math.min(Math.max(Prefers.getInt("buffer_bytes"), 0), 3);
+    }
+
+    public static void putBufferBytesOption(int option) {
+        Prefers.put("buffer_bytes", Math.min(Math.max(option, 0), 3));
+    }
+
+    public static int getBufferBytes() {
+        return switch (getBufferBytesOption()) {
+            case 1 -> 64 * 1024 * 1024;
+            case 2 -> 128 * 1024 * 1024;
+            case 3 -> 256 * 1024 * 1024;
+            default -> 0;
+        };
+    }
+
+    public static int getBackBufferOption() {
+        return Math.min(Math.max(Prefers.getInt("back_buffer"), 0), 3);
+    }
+
+    public static void putBackBufferOption(int option) {
+        Prefers.put("back_buffer", Math.min(Math.max(option, 0), 3));
+    }
+
+    public static int getBackBufferMs() {
+        return switch (getBackBufferOption()) {
+            case 1 -> 15_000;
+            case 2 -> 30_000;
+            case 3 -> 60_000;
+            default -> 0;
+        };
+    }
+
+    public static int getPlayCacheOption() {
+        return Math.min(Math.max(Prefers.getInt("play_cache", DEFAULT_PLAY_CACHE_OPTION), 0), 4);
+    }
+
+    public static void putPlayCacheOption(int option) {
+        Prefers.put("play_cache", Math.min(Math.max(option, 0), 4));
+    }
+
+    public static long getPlayCacheSize() {
+        return switch (getPlayCacheOption()) {
+            case 1 -> 256L * 1024 * 1024;
+            case 2 -> 512L * 1024 * 1024;
+            case 3 -> 1024L * 1024 * 1024;
+            case 4 -> 2L * 1024 * 1024 * 1024;
+            default -> 128L * 1024 * 1024;
+        };
+    }
+
+    public static boolean isAutoChange() {
+        return Prefers.getBoolean("player_auto_change", true);
+    }
+
+    public static void putAutoChange(boolean autoChange) {
+        Prefers.put("player_auto_change", autoChange);
     }
 
     public static int getBackground() {
@@ -116,6 +190,28 @@ public class PlayerSetting {
 
     public static void putTunnel(boolean tunnel) {
         Prefers.put("tunnel", tunnel);
+        if (tunnel) Prefers.put("render", RENDER_SURFACE);
+    }
+
+    public static boolean isTunnelingEnabled() {
+        return isTunnel() && getRender() == RENDER_SURFACE;
+    }
+
+    public static boolean isExo4KCompat() {
+        return isExoEnhanced();
+    }
+
+    public static boolean isExoEnhanced() {
+        return Prefers.getBoolean("exo_4k_compat");
+    }
+
+    public static void putExo4KCompat(boolean value) {
+        putExoEnhanced(value);
+    }
+
+    public static void putExoEnhanced(boolean value) {
+        Prefers.put("exo_4k_compat", value);
+        if (value) Prefers.put("render", RENDER_SURFACE);
     }
 
     public static boolean isAudioPrefer() {
@@ -124,6 +220,14 @@ public class PlayerSetting {
 
     public static void putAudioPrefer(boolean audioPrefer) {
         Prefers.put("audio_prefer", audioPrefer);
+    }
+
+    public static boolean isAudioPassThrough() {
+        return Prefers.getBoolean("audio_pass_through", true);
+    }
+
+    public static void putAudioPassThrough(boolean audioPassThrough) {
+        Prefers.put("audio_pass_through", audioPassThrough);
     }
 
     public static boolean isVideoPrefer() {
@@ -198,7 +302,15 @@ public class PlayerSetting {
         Prefers.put("player_osd_mini", value);
     }
 
+    public static boolean isOsdDiagnostics() {
+        return Prefers.getBoolean("player_osd_diagnostics");
+    }
+
+    public static void putOsdDiagnostics(boolean value) {
+        Prefers.put("player_osd_diagnostics", value);
+    }
+
     public static boolean isOsdEnabled() {
-        return isOsdTitle() || isOsdTime() || isOsdProgress() || isOsdTraffic();
+        return isOsdTitle() || isOsdTime() || isOsdProgress() || isOsdTraffic() || isOsdMini() || isOsdDiagnostics();
     }
 }

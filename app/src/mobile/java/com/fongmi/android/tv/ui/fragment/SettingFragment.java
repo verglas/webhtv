@@ -55,6 +55,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
 
     private FragmentSettingBinding mBinding;
     private String[] size;
+    private String[] uiScale;
 
     public static SettingFragment newInstance() {
         return new SettingFragment();
@@ -94,7 +95,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         EventBus.getDefault().register(this);
         mBinding.vodUrl.setText(VodConfig.getDesc());
         mBinding.liveUrl.setText(LiveConfig.getDesc());
-        mBinding.wallUrl.setText(WallConfig.getDesc());
+        setWallText();
         mBinding.versionText.setText(BuildConfig.VERSION_NAME);
         setOtherText();
         setCacheText();
@@ -105,6 +106,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         mBinding.dohText.setText(getDohList()[getDohIndex()]);
         mBinding.incognitoText.setText(getSwitch(Setting.isIncognito()));
         mBinding.sizeText.setText((size = ResUtil.getStringArray(R.array.select_size))[PlayerSetting.getSize()]);
+        mBinding.uiScaleText.setText((uiScale = ResUtil.getStringArray(R.array.select_ui_scale))[Setting.getUiScaleIndex()]);
     }
 
     private void setCacheText() {
@@ -123,6 +125,7 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
         mBinding.live.setOnClickListener(this::onLive);
         mBinding.wall.setOnClickListener(this::onWall);
         mBinding.size.setOnClickListener(this::setSize);
+        mBinding.uiScale.setOnClickListener(this::setUiScale);
         mBinding.cache.setOnClickListener(this::onCache);
         mBinding.backup.setOnClickListener(this::onBackup);
         mBinding.enhance.setOnClickListener(this::onEnhance);
@@ -270,8 +273,9 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
     }
 
     private void setWallDefault(View view) {
-        Setting.putWall(Setting.getWall() == 4 ? 1 : Setting.getWall() + 1);
+        Setting.putWall(Setting.nextDefaultWall());
         Setting.putWallType(0);
+        setWallText();
         ConfigEvent.wall();
     }
 
@@ -296,6 +300,15 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
             PlayerSetting.putSize(which);
             RefreshEvent.size();
             dialog.dismiss();
+        }).show();
+    }
+
+    private void setUiScale(View view) {
+        new MaterialAlertDialogBuilder(requireActivity()).setTitle(R.string.setting_ui_scale).setNegativeButton(R.string.dialog_negative, null).setSingleChoiceItems(uiScale, Setting.getUiScaleIndex(), (dialog, which) -> {
+            mBinding.uiScaleText.setText(uiScale[which]);
+            Setting.putUiScaleIndex(which);
+            dialog.dismiss();
+            requireActivity().recreate();
         }).show();
     }
 
@@ -359,10 +372,18 @@ public class SettingFragment extends BaseFragment implements ConfigListener, Sit
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onConfigEvent(ConfigEvent event) {
+        if (event.type() == ConfigEvent.Type.WALL) {
+            setWallText();
+            return;
+        }
         if (event.type() != ConfigEvent.Type.COMMON) return;
         mBinding.vodUrl.setText(VodConfig.getDesc());
         mBinding.liveUrl.setText(LiveConfig.getDesc());
-        mBinding.wallUrl.setText(WallConfig.getDesc());
+        setWallText();
+    }
+
+    private void setWallText() {
+        mBinding.wallUrl.setText(Setting.getWallDesc(WallConfig.getDesc()));
     }
 
     @Override

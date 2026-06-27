@@ -21,6 +21,7 @@ import com.fongmi.android.tv.setting.DanmakuSetting;
 import com.fongmi.android.tv.ui.adapter.DanmakuAdapter;
 import com.fongmi.android.tv.ui.custom.SpaceItemDecoration;
 import com.fongmi.android.tv.utils.FileChooser;
+import com.fongmi.android.tv.utils.Util;
 
 public final class DanmakuDialog extends BaseBottomSheetDialog implements DanmakuAdapter.OnClickListener {
 
@@ -59,7 +60,7 @@ public final class DanmakuDialog extends BaseBottomSheetDialog implements Danmak
         binding.recycler.addItemDecoration(new SpaceItemDecoration(1, 16));
         binding.recycler.post(() -> binding.recycler.scrollToPosition(adapter.getSelected()));
         binding.recycler.setVisibility(adapter.getItemCount() == 0 ? View.GONE : View.VISIBLE);
-        binding.search.setVisibility(player.getMetadata() == null || DanmakuSetting.getEffectiveApiUrl().isEmpty() ? View.GONE : View.VISIBLE);
+        binding.search.setVisibility(player.getMetadata() == null || !DanmakuSetting.hasValidApiUrl() ? View.GONE : View.VISIBLE);
     }
 
     @Override
@@ -71,7 +72,6 @@ public final class DanmakuDialog extends BaseBottomSheetDialog implements Danmak
 
     private void onSearch(View view) {
         DanmakuSearchDialog.create().player(player).show(getActivity());
-        dismiss();
     }
 
     private void onChoose(View view) {
@@ -81,13 +81,22 @@ public final class DanmakuDialog extends BaseBottomSheetDialog implements Danmak
 
     private void onSetting(View view) {
         DanmakuSettingDialog.create().player(player).show(getActivity());
-        dismiss();
     }
 
     @Override
     public void onItemClick(Danmaku item) {
         player.setDanmaku(item.isSelected() ? Danmaku.empty() : item);
         dismiss();
+    }
+
+    @Override
+    protected boolean transparent() {
+        return !Util.isLeanback();
+    }
+
+    @Override
+    protected boolean stableOverlay() {
+        return !Util.isLeanback();
     }
 
     private final ActivityResultLauncher<Intent> launcher = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {

@@ -67,6 +67,7 @@
         android:orientation="horizontal">
 
         <androidx.appcompat.widget.LinearLayoutCompat
+            android:id="@+id/insertPanel"
             android:layout_width="0dp"
             android:layout_height="42dp"
             android:gravity="center_vertical"
@@ -154,6 +155,21 @@
             app:backgroundTint="@color/dialog_outlined_button_bg"
             app:strokeColor="@color/dialog_outlined_button_stroke" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/sort"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:layout_marginStart="6dp"
+            android:minHeight="38dp"
+            android:minWidth="64dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="@string/setting_custom_csp_sort"
+            android:textColor="@color/dialog_outlined_button_text"
+            app:backgroundTint="@color/dialog_outlined_button_bg"
+            app:strokeColor="@color/dialog_outlined_button_stroke" />
+
     </androidx.appcompat.widget.LinearLayoutCompat>
 
     <com.google.android.material.button.MaterialButtonToggleGroup
@@ -220,7 +236,7 @@
                 app:hintEnabled="false"
                 app:hintTextColor="#5F6368">
 
-                <com.google.android.material.textfield.TextInputEditText
+                <com.fongmi.android.tv.ui.custom.SafeScrollEditText
                     android:id="@+id/jsonText"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
@@ -232,6 +248,7 @@
                     android:inputType="textMultiLine|textNoSuggestions"
                     android:minLines="8"
                     android:scrollHorizontally="true"
+                    android:scrollbars="none"
                     android:selectAllOnFocus="false"
                     android:singleLine="false"
                     android:textColor="@color/black"
